@@ -5,9 +5,13 @@ package main
 
 import (
 	"context"
+	"io"
 	"sort"
 	"sync"
 )
+
+// runLocalSimulation é implementada na próxima parte (go run . -local).
+func runLocalSimulation(_ io.Writer) error { return nil }
 
 type InMemorySessionStore struct {
 	mu   sync.Mutex

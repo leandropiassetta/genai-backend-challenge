@@ -12,6 +12,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"log/slog"
@@ -23,6 +24,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/aws/aws-lambda-go/lambda"
 )
 
 // DefaultSystemPrompt é o prompt original do desafio. Em produção ele é
@@ -566,4 +568,28 @@ func reasonOf(err error) string {
 	return err.Error()
 }
 
-func main() {}
+func main() {
+	local := flag.Bool("local", false, "roda uma simulação com implementações em memória, sem AWS")
+	flag.Parse()
+
+	if *local {
+		if err := runLocalSimulation(os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	settings, err := SettingsFromEnv()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	// Fora do handler: roda uma vez por container, na fase INIT da Lambda.
+	processor, err := BuildAWSProcessor(context.Background(), settings)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	lambda.Start(processor.ProcessBatch)
+}
