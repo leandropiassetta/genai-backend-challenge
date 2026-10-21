@@ -416,6 +416,9 @@ func (p *Processor) processSession(ctx context.Context, msgs []InboundMessage, m
 			// Uma mensagem anterior da mesma sessão falhou: as seguintes voltam
 			// também, para o usuário não receber a resposta da pergunta 2 antes
 			// da pergunta 1.
+			p.logger.WarnContext(ctx, "returned_preserving_session_order",
+				"message_id", msg.MessageID, "session_id", msg.SessionID, "blocked_by", failed[0])
+			metrics.Add("OrderReturns", 1, "Count")
 			failed = append(failed, msg.MessageID)
 			continue
 		}

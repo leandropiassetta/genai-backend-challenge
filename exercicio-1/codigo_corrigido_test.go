@@ -492,3 +492,26 @@ func TestLogs_DoNotContainUserText(t *testing.T) {
 		t.Fatalf("log message_processed ausente: %s", env.logs.String())
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Simulação local
+// ---------------------------------------------------------------------------
+
+func TestRunLocalSimulation(t *testing.T) {
+	var out bytes.Buffer
+	if err := runLocalSimulation(&out); err != nil {
+		t.Fatalf("erro: %v", err)
+	}
+	s := out.String()
+	for _, want := range []string{
+		"Falhas devolvidas à fila: [m3 m4]", // throttling simulado em m3 + m4 da mesma sessão
+		"Falhas devolvidas à fila: []",      // reentrega processada sem falha
+		"m5 (invalid_json)",                 // JSON inválido foi para a DLQ
+		`"duplicate":true`,                  // reentrega reaproveitou a resposta
+		`"msg":"returned_preserving_session_order","service":"chat-consumer","message_id":"m4"`,
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("saída não contém %q\n%s", want, s)
+		}
+	}
+}
