@@ -135,7 +135,10 @@ aparecem mais abaixo.
 Em filas padrão, a expiração de uma mensagem que vai para a DLQ conta a partir da **entrada original na
 fila de origem**, não da chegada na DLQ. Com a retenção padrão de 4 dias, mensagens podem estar
 **expirando e sendo perdidas** enquanto o fluxo falha. Medida imediata: retenção da DLQ em 14 dias (o
-máximo) e alarme em `ApproximateAgeOfOldestMessage`.
+máximo) e alarme em `ApproximateAgeOfOldestMessage`. Esse alarme **subestima** o risco: na DLQ, a métrica
+conta a partir da chegada à DLQ, enquanto a expiração conta a partir da entrada na fila de origem. Por
+isso, o limite do alarme deve descontar o tempo que a mensagem já pode ter passado na origem (no mínimo
+`maxReceiveCount` × visibility timeout, mais o tempo de fila acumulada em incidentes).
 
 ---
 
@@ -158,7 +161,7 @@ laterais** e **observação externa**, de modo que todo item termine num destino
 | Recurso | O que torna visível |
 |---|---|
 | Alarme `ApproximateNumberOfMessagesVisible > 0` na DLQ por 15 min | A DLQ não está sendo drenada. |
-| Alarme `ApproximateAgeOfOldestMessage` > 1h | Mensagens envelhecendo, com risco de expirar. |
+| Alarme `ApproximateAgeOfOldestMessage` > 1h na DLQ | Mensagens **paradas na DLQ** sem serem drenadas. Não mede o risco de expiração diretamente: a métrica conta desde a chegada à DLQ, e a expiração desde a entrada na fila de origem (ver "Agravante de urgência"). |
 | Metric math: `NumberOfMessagesReceived > 0` **e** `NumberOfMessagesDeleted = 0` em 15 min | **Lê e não apaga:** a assinatura exata das causas 1–4. |
 | Alarme para backlog visível crescente na DLQ, correlacionado com erros/retries do consumer de origem | Indica que a entrada efetiva disparou. `NumberOfMessagesSent` só complementa o diagnóstico quando as mensagens são enviadas diretamente à DLQ. |
 | **Heartbeat** ("dead man's switch"): o último nó faz ping num serviço como Healthchecks.io ou Cronitor; sem ping em 2 intervalos, alerta | Detecta o fluxo que **parou de rodar** (desativado, n8n fora do ar, credencial expirada), que nenhum alarme interno pega. |
