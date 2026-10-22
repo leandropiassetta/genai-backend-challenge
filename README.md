@@ -125,15 +125,11 @@ consumer em seguida.
 
 ## Uso de IA
 
-**Ferramentas:** Claude Code (Anthropic) na construção inicial e ChatGPT/Codex (OpenAI) na revisão crítica
-final.
+**Ferramentas:** Claude Code (Anthropic) na construção inicial.
 
 **Onde a IA ajudou:**
 - O Claude Code auxiliou a decompor o enunciado, propor a arquitetura do consumer, rascunhar o código Go,
   os testes e a simulação local, além das primeiras versões dos documentos dos três exercícios.
-- O ChatGPT/Codex comparou a entrega final com o PDF, revisou criticamente código e documentação,
-  executou testes com detector de corrida, `go vet` e build Linux/arm64 e apontou afirmações que precisavam
-  ser limitadas ou corrigidas.
 
 **O que eu conduzi, modifiquei ou rejeitei:**
 - Rejeitei uma implementação inicial direta em Python sem alinhamento prévio e escolhi Go para demonstrar
