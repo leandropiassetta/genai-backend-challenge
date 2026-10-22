@@ -18,8 +18,10 @@ Sintoma: as mensagens continuam acumulando na DLQ com o fluxo ativo, e o painel 
 1. **O fluxo não está apagando o que lê,** sem gerar erro.
 2. **A DLQ está recebendo mais rápido do que o fluxo consegue drenar.**
 
-A primeira coisa a fazer é separar as duas com as métricas da própria DLQ no CloudWatch (veja "Como
-confirmar" em cada causa).
+A primeira coisa a fazer é separar as duas com o backlog visível da DLQ e a relação entre mensagens
+recebidas e apagadas no CloudWatch (veja "Como confirmar" em cada causa). `NumberOfMessagesSent` exige
+cuidado: ele contabiliza envios diretos, mas não mensagens movidas automaticamente para a DLQ pela
+redrive policy.
 
 ---
 
@@ -86,8 +88,11 @@ aparecem mais abaixo.
   amostra dos servidores e pode voltar **vazio mesmo com mensagens na fila**. Com um schedule de alguns
   minutos, a drenagem é de poucas mensagens por hora. Enquanto isso, o consumer do Exercício 1 manda lotes
   inteiros para a DLQ (incluindo as mensagens boas que estavam no mesmo lote de uma inválida).
-- **Como confirmar:** comparar, na DLQ, `NumberOfMessagesSent` (entrada) com `NumberOfMessagesDeleted`
-  (saída) por hora.
+- **Como confirmar:** acompanhar a tendência de `ApproximateNumberOfMessagesVisible` e
+  `ApproximateAgeOfOldestMessage` na DLQ, junto de `NumberOfMessagesReceived` e
+  `NumberOfMessagesDeleted`. Se o backlog cresce mesmo com deletes, a entrada efetiva é maior que a
+  vazão. `NumberOfMessagesSent` não mede o redrive automático e, portanto, não serve sozinho para essa
+  comparação.
 - **Correção:** a de verdade é na origem (Exercício 1: partial batch failure e fim do reprocessamento do
   lote inteiro). No fluxo: `MaxNumberOfMessages=10`, long polling (`WaitTimeSeconds=20`) e repetir o
   receive enquanto houver mensagens.
@@ -155,7 +160,7 @@ laterais** e **observação externa**, de modo que todo item termine num destino
 | Alarme `ApproximateNumberOfMessagesVisible > 0` na DLQ por 15 min | A DLQ não está sendo drenada. |
 | Alarme `ApproximateAgeOfOldestMessage` > 1h | Mensagens envelhecendo, com risco de expirar. |
 | Metric math: `NumberOfMessagesReceived > 0` **e** `NumberOfMessagesDeleted = 0` em 15 min | **Lê e não apaga:** a assinatura exata das causas 1–4. |
-| Alarme em `NumberOfMessagesSent` da DLQ acima do normal | A entrada disparou: o problema está no consumer (Ex. 1), não no n8n. |
+| Alarme para backlog visível crescente na DLQ, correlacionado com erros/retries do consumer de origem | Indica que a entrada efetiva disparou. `NumberOfMessagesSent` só complementa o diagnóstico quando as mensagens são enviadas diretamente à DLQ. |
 | **Heartbeat** ("dead man's switch"): o último nó faz ping num serviço como Healthchecks.io ou Cronitor; sem ping em 2 intervalos, alerta | Detecta o fluxo que **parou de rodar** (desativado, n8n fora do ar, credencial expirada), que nenhum alarme interno pega. |
 | **CloudTrail com eventos de dados do SQS** | Cada `DeleteMessage` com resultado e erro, inclusive `AccessDenied`. |
 | **Canário sintético**: a cada hora, inserir na DLQ uma mensagem marcada como teste e verificar se ela some em N minutos | Testa o fluxo de ponta a ponta continuamente, inclusive o delete. |

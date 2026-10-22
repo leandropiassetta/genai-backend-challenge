@@ -49,8 +49,8 @@ sem deploy de código).
 |---|---|---|
 | 1. Lote inteiro reprocessado | `ProcessBatch` nunca retorna erro; cada falha vai individualmente em `BatchItemFailures`. Um `panic` em qualquer adaptador vira falha só daquela mensagem. | `codigo_corrigido.go`: `ProcessBatch`, `safeProcessMessage` |
 | 2. Timeout / deadline | Timeout por chamada ao Bedrock (20s), timeout de conexão (2s), retry do SDK limitado a 2 tentativas (o retry principal é a reentrega do SQS). Antes de cada mensagem, checa o deadline do `ctx` da Lambda e devolve à fila o que não cabe no tempo restante. | `aws.go`: `BedrockChatModel.Complete`, `BuildAWSProcessor`; `codigo_corrigido.go`: `processSession` |
-| 3. Sequencial | Sessões diferentes em paralelo (goroutines, limitadas por `MAX_WORKERS`). Mensagens da mesma sessão em ordem; se uma falha, as seguintes da mesma sessão voltam junto, com log `returned_preserving_session_order`. | `codigo_corrigido.go`: `ProcessBatch`, `processSession` |
-| 4. Idempotência | Chave determinística `SentTimestamp#messageId`. Antes de chamar o modelo, verifica se a troca já existe; se sim, republica a resposta guardada sem gastar tokens. Gravação condicional (`attribute_not_exists`) resolve corrida entre entregas simultâneas. | `codigo_corrigido.go`: `ExchangeKey`, `processMessage`; `aws.go`: `DynamoSessionStore.SaveExchange` |
+| 3. Sequencial | Sessões diferentes em paralelo (goroutines, limitadas por `MAX_WORKERS`). Dentro do mesmo lote, mensagens da mesma sessão são processadas em ordem; se uma falha, as seguintes dessa sessão voltam junto, com log `returned_preserving_session_order`. | `codigo_corrigido.go`: `ProcessBatch`, `processSession` |
+| 4. Idempotência | Chave determinística `SentTimestamp#messageId`. Antes de chamar o modelo, verifica se a troca já existe; se sim, republica a resposta guardada sem gastar tokens. A gravação condicional (`attribute_not_exists`) escolhe uma resposta canônica se duas entregas concorrerem, embora ambas ainda possam consumir tokens antes da gravação. | `codigo_corrigido.go`: `ExchangeKey`, `processMessage`; `aws.go`: `DynamoSessionStore.SaveExchange` |
 | 5. Resposta perdida | Resposta publicada numa fila de saída (FIFO: `MessageGroupId` = sessão, dedup = `messageId`). Logs registram só tamanhos e ids. | `aws.go`: `SQSPublisher.Publish`; `observability.go`: `NewLogger` |
 | 6. Sem contexto | Últimas 10 trocas da sessão (DynamoDB, só as anteriores à mensagem atual) injetadas no prompt, cortando as mais antigas acima de 12.000 caracteres. | `codigo_corrigido.go`: `BuildMessages`; `aws.go`: `DynamoSessionStore.RecentExchanges` |
 | 7. Prompt/parâmetros | `system` enviado (configurável via `SYSTEM_PROMPT_PATH`, para usar o prompt do Ex. 3), `max_tokens` 1024, temperatura 0.3, tudo configurável. `prompt_version` em cada log e métrica. | `aws.go`: `BedrockChatModel.Complete`; `codigo_corrigido.go`: `DefaultSettings` |
@@ -62,7 +62,7 @@ sem deploy de código).
 
 | Métrica | Para que serve |
 |---|---|
-| `EndToEndLatency` | Tempo desde o envio do usuário (`SentTimestamp`), **incluindo a espera na fila**. |
+| `EndToEndLatency` | Tempo desde a entrada no SQS (`SentTimestamp`), **incluindo a espera na fila**. Não inclui eventual atraso anterior ao enqueue. |
 | `ModelLatency` | Tempo só da chamada ao Bedrock. Comparada com a anterior, separa "modelo lento" de "fila acumulada". É o primeiro passo para diagnosticar os picos de 12s. |
 | `MessagesProcessed`, `MessagesRetried`, `MessagesRejected`, `MessagesFailed` | Saúde do processamento. |
 | `DuplicatesSkipped`, `DeadlineReturns`, `OrderReturns` | Quanto a idempotência, o deadline e a ordem por sessão estão atuando. |
@@ -118,6 +118,10 @@ GOOS=linux GOARCH=arm64 go build -tags lambda.norpc -o bootstrap . && zip functi
 - Os adaptadores AWS foram testados com fakes que imitam os clients do SDK, **não contra a AWS real**
   (o desafio permite). Não validei IAM, a configuração do event source mapping nem a latência real do
   Bedrock.
+- A ordenação por sessão é garantida **dentro de um lote**. Com uma fila standard, duas invocações
+  concorrentes ainda podem processar mensagens da mesma sessão fora de ordem. Se a ordem global for um
+  requisito, eu usaria uma fila de entrada FIFO com `MessageGroupId = session_id` e adaptaria o tratamento
+  de falhas à semântica FIFO antes do deploy.
 - A deduplicação da resposta fora da janela de 5 min do FIFO depende de o consumidor da fila de saída
   deduplicar por `in_reply_to` (suposição documentada no README).
 - Se duas entregas da mesma mensagem rodarem ao mesmo tempo, as duas chamam o modelo; só uma resposta é
